@@ -11,8 +11,6 @@
 
 use std::fmt::Display;
 
-use colored::Colorize;
-
 pub fn is_palindrome(s: String) -> bool {
     // TODO: Implement the logic to check if the string is a palindrome
     let mut new_str = String::new();
