@@ -11,11 +11,19 @@
     Hint: Use the sum of the first `n` numbers and subtract the sum of the array elements to find the missing number.
 */
 
-use std::fmt::{self, Display, Formatter};
+use std::fmt::Display;
 
 pub fn find_missing_number(nums: Vec<i32>) -> i32 {
-    // TODO: Implement the logic to find the missing number
-    0 // Placeholder return value
+    let mut nums = nums;
+    nums.sort();
+    let mut next = 1;
+    for num in nums.iter() {
+        if *num != next {
+            return next;
+        }
+        next = *num + 1;
+    }
+    return -1;
 }
 
 #[cfg(test)]
