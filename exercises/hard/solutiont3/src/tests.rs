@@ -1,5 +1,6 @@
 // src/tests.rs
 mod district;
+mod json;
 
 #[cfg(test)]
 mod tests {
