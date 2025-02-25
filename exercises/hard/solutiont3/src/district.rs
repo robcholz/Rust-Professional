@@ -1,102 +1,93 @@
-use crate::json;
+// src/district.rs
+use serde_json::{Value, from_reader};
 use std::collections::{HashMap, HashSet};
-use std::fs::read_to_string;
-use std::str::FromStr;
+use std::fs::File;
+use std::io::BufReader;
 
-struct Graph {
-    adj_list: HashMap<String, Vec<String>>,
+// 保留UnionFind实现但标记为pub(crate)
+pub(crate) struct UnionFind {
+    parent: Vec<usize>,
+    rank: Vec<usize>,
 }
 
-impl Graph {
-    fn new() -> Self {
-        Self {
-            adj_list: HashMap::new(),
+impl UnionFind {
+    pub(crate) fn new(size: usize) -> Self {
+        UnionFind {
+            parent: (0..size).collect(),
+            rank: vec![1; size],
         }
     }
 
-    fn add_edge(&mut self, u: String, v: String) {
-        self.adj_list
-            .entry(u.clone())
-            .or_insert(vec![])
-            .push(v.clone());
-        self.adj_list.entry(v).or_insert(vec![]).push(u); // Undirected graph
+    pub(crate) fn find(&mut self, x: usize) -> usize {
+        if self.parent[x] != x {
+            self.parent[x] = self.find(self.parent[x]);
+        }
+        self.parent[x]
     }
 
-    fn count_closed_loops(&self) -> usize {
-        let mut visited: HashSet<String> = HashSet::new();
-        let mut cycle_count = 0;
-
-        for node in self.adj_list.keys() {
-            if !visited.contains(node) {
-                if self.dfs(node.clone(), None, &mut visited, &mut HashSet::new()) {
-                    cycle_count += 1;
-                }
+    pub(crate) fn union(&mut self, x: usize, y: usize) {
+        let x_root = self.find(x);
+        let y_root = self.find(y);
+        if x_root == y_root {
+            return;
+        }
+        if self.rank[x_root] < self.rank[y_root] {
+            self.parent[x_root] = y_root;
+        } else {
+            self.parent[y_root] = x_root;
+            if self.rank[x_root] == self.rank[y_root] {
+                self.rank[x_root] += 1;
             }
         }
-
-        cycle_count
-    }
-
-    fn dfs(
-        &self,
-        node: String,
-        parent: Option<String>,
-        visited: &mut HashSet<String>,
-        stack: &mut HashSet<String>,
-    ) -> bool {
-        visited.insert(node.clone());
-        stack.insert(node.clone());
-
-        if let Some(neighbors) = self.adj_list.get(&node.clone()) {
-            for neighbor in neighbors {
-                if Some(neighbor) == parent.as_ref() {
-                    continue; // Skip the edge leading back to the parent
-                }
-                if stack.contains(neighbor)
-                    || (!visited.contains(neighbor)
-                        && self.dfs(neighbor.clone(), Some(node.clone()), visited, stack))
-                {
-                    return true; // Cycle detected
-                }
-            }
-        }
-
-        stack.remove(&node);
-        false
     }
 }
 
-pub fn count_provinces() -> String {
-    let json = read_to_string("district.json").unwrap();
-    let json = json::JsonObject::parse(json.as_str()).unwrap();
-    let mut provinces = HashMap::new();
+// 确保函数被导出
+pub fn process_districts() {
+    let file = File::open("district.json").expect("Failed to open file");
+    let reader = BufReader::new(file);
+    let json_data: Value = from_reader(reader).expect("Failed to parse JSON");
 
-    json.object().unwrap().iter().for_each(|(main_key, v)| {
-        let mut graph = Graph::new();
+    let batches = json_data.as_object().expect("Invalid JSON format");
+    let mut sorted_batches: Vec<_> = batches.iter().collect();
+    sorted_batches.sort_by_key(|(k, _)| k.parse::<i32>().unwrap());
 
-        v.object().unwrap().iter().for_each(|(key, array)| {
-            array.array().unwrap().iter().for_each(|p| {
-                graph.add_edge(key.to_string(), p.string().unwrap().clone());
-            })
-        });
+    let mut results = Vec::new();
+    for (_, batch_value) in sorted_batches {
+        let cities = batch_value.as_object().expect("Batch data should be object");
 
-        provinces.insert(
-            u8::from_str(main_key.as_str()).unwrap(),
-            graph.count_closed_loops() as u32,
-        );
-    });
+        let mut merged = HashMap::new();
+        for (city, neighbors) in cities {
+            let entry = merged.entry(city.as_str()).or_insert(Vec::new());
+            for n in neighbors.as_array().unwrap() {
+                entry.push(n.as_str().unwrap());
+            }
+        }
 
-    let mut result = String::new();
-    provinces
-        .iter_mut()
-        .filter(|(_, count)| **count == 0)
-        .for_each(|(_, count)| *count = 1u32);
-    let mut sorted_vec: Vec<_> = provinces.iter().map(|(&k, &v)| (k, v)).collect();
-    sorted_vec.sort_by_key(|&(k, _)| k);
-    sorted_vec.iter().for_each(|(_, v)| {
-        result.push_str(&v.to_string());
-        result.push(',');
-    });
-    result.pop();
-    result
+        let all_cities: HashSet<_> = merged.iter()
+            .flat_map(|(&k, v)| std::iter::once(k).chain(v.iter().copied()))
+            .collect();
+
+        let mut cities: Vec<_> = all_cities.into_iter().collect();
+        cities.sort_unstable();
+        let city_indices: HashMap<_, _> = cities.iter()
+            .enumerate()
+            .map(|(i, &city)| (city, i))
+            .collect();
+
+        let mut uf = UnionFind::new(cities.len());
+
+        for (city, neighbors) in &merged {
+            let &x = city_indices.get(city).unwrap();
+            for &neighbor in neighbors {
+                let &y = city_indices.get(neighbor).unwrap();
+                uf.union(x, y);
+            }
+        }
+
+        let roots: HashSet<_> = (0..cities.len()).map(|i| uf.find(i)).collect();
+        results.push(roots.len().to_string());
+    }
+
+    println!("{}", results.join(","));
 }
