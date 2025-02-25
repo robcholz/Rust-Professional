@@ -97,7 +97,6 @@ pub fn count_provinces() -> String {
         result.push_str(&v.to_string());
         result.push(',');
     });
-    
     result.pop();
     result
 }
