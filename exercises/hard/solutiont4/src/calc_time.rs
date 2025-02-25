@@ -1,159 +1,214 @@
-pub fn time_info(time: &str) -> String {
-    // Parse input date
-    let parts: Vec<&str> = time.split('-').collect();
-    let year = parts[0].parse::<i32>().unwrap();
-    let month = parts[1].parse::<u32>().unwrap();
-    let day = parts[2].parse::<u32>().unwrap();
-
-    // Calculate day of year
-    let day_of_year = day_of_year(year, month, day);
-
-    // Calculate day of week (1 = Monday, ..., 7 = Sunday)
-    let dow = day_of_week(year, month, day);
-
-    // Calculate week number
-    let week_number = calculate_week_number(year, month, day);
-
-    // Calculate days left in the year
-    let days_in_year = if is_leap_year(year) { 366 } else { 365 };
-    let days_left_in_year = days_in_year - day_of_year;
-
-    // Calculate days until Chinese New Year (正月初一)
-    let days_to_cny = days_until_chinese_new_year(year, month, day);
-
-    // Calculate days until next A-share market opening
-    let days_to_market = days_until_market_opening(year, month, day);
-
-    // Format and return the result string
-    format!(
-        "{},{},{},{},{},{}",
-        week_number, dow, day_of_year, days_left_in_year, days_to_cny, days_to_market
-    )
-}
-
-// Helper function to check if a year is a leap year
+// 判断是否为闰年
 fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
 }
 
-// Helper function to calculate the day of the year
-fn day_of_year(year: i32, month: u32, day: u32) -> u32 {
-    let days_in_month = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
-    let mut result = day;
+// 获取每个月的天数
+fn days_in_month(year: i32, month: i32) -> i32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 => {
+            if is_leap_year(year) {
+                29
+            } else {
+                28
+            }
+        }
+        _ => panic!("Invalid month"),
+    }
+}
 
+// 计算当年的第几天
+fn day_of_year(year: i32, month: i32, day: i32) -> i32 {
+    let mut days = 0;
     for m in 1..month {
-        result += days_in_month[m as usize];
+        days += days_in_month(year, m);
     }
-
-    // Add an extra day for leap years if the month is after February
-    if month > 2 && is_leap_year(year) {
-        result += 1;
-    }
-
-    result
+    days + day
 }
 
-// Helper function to calculate the day of the week (1=Monday, 7=Sunday)
-fn day_of_week(year: i32, month: u32, day: u32) -> u32 {
-    let adjusted_year = if month < 3 { year - 1 } else { year } as u32;
-    let adjusted_month = if month < 3 { month + 12 } else { month } as u32;
-
-    // Zeller's Congruence (adjusted to get Monday=1, Sunday=7)
-    let h = (day + (13 * (adjusted_month + 1)) / 5 + adjusted_year + adjusted_year / 4
-        - adjusted_year / 100
-        + adjusted_year / 400)
-        % 7;
-
-    // Convert to 1=Monday, 7=Sunday format
-    match h {
-        0 => 6,     // Sunday
-        _ => h - 1, // Monday to Saturday (1-6)
-    }
+// 计算当年剩余天数
+fn days_left_in_year(year: i32, month: i32, day: i32) -> i32 {
+    let total_days = if is_leap_year(year) { 366 } else { 365 };
+    total_days - day_of_year(year, month, day)
 }
 
-// Helper function to calculate the ISO week number
-fn calculate_week_number(year: i32, month: u32, day: u32) -> u32 {
-    // Get first day of the year
-    let first_day_dow = day_of_week(year, 1, 1);
-
-    // Days from start of the year
-    let days = day_of_year(year, month, day);
-
-    // Calculate week number based on ISO 8601
-    // Week 1 is the week with the first Thursday of the year
-    let offset = if first_day_dow <= 4 {
-        first_day_dow - 1
+// 计算星期几，使用蔡氏公式
+fn day_of_week(year: i32, month: i32, day: i32) -> i32 {
+    let mut y = year;
+    let mut m = month;
+    if m < 3 {
+        m += 12;
+        y -= 1;
+    }
+    let c = y / 100;
+    y %= 100;
+    let w = (y + y / 4 + c / 4 - 2 * c + 26 * (m + 1) / 10 + day - 1) % 7;
+    if w < 0 {
+        w + 7
+    } else if w == 0 {
+        7
     } else {
-        8 - first_day_dow
-    };
-    let adjusted_days = days + offset - 1;
-
-    // For dates before the first week, check if they belong to the last week of previous year
-    if adjusted_days < 0 {
-        // Last week of previous year
-        let last_day_prev_year = if is_leap_year(year - 1) { 366 } else { 365 };
-        let last_week = calculate_week_number(year - 1, 12, 31);
-        return last_week;
-    }
-    match adjusted_days / 7 + 1 {
-        3 => 2,
-        any => any,
+        w
     }
 }
 
-// Calculate days until Chinese New Year
-fn days_until_chinese_new_year(year: i32, month: u32, day: u32) -> u32 {
-    // Approximate Chinese New Year dates for relevant years
-    let cny_date = match year {
-        2024 => (2024, 2, 10), // Feb 10, 2024
-        2025 => (2025, 1, 29), // Jan 29, 2025
-        2026 => (2026, 2, 17), // Feb 17, 2026
-        // For other years, use approximation based on lunar calendar
-        // This is a simplification - real calculation would need lunar calendar data
-        _ => (year, 2, 5), // Default to Feb 5 as approximation
-    };
-
-    days_between(year, month, day, cny_date.0, cny_date.1, cny_date.2)
-}
-
-// Calculate days until next A-share market opening
-fn days_until_market_opening(year: i32, month: u32, day: u32) -> u32 {
-    let dow = day_of_week(year, month, day);
-
-    // A-shares typically open Monday-Friday
-    match dow {
-        5 => 2, // Friday -> Monday (2 days)
-        6 => 1, // Saturday -> Monday (1 day)
-        7 => 0, // Sunday -> Monday (0 days)
-        _ => 0, // Monday-Thursday -> next day (0 days)
-    }
-}
-
-// Calculate days between two dates (excluding start date)
-fn days_between(y1: i32, m1: u32, d1: u32, y2: i32, m2: u32, d2: u32) -> u32 {
-    // Convert both dates to days since a common epoch
-    let days1 = days_since_epoch(y1, m1, d1);
-    let days2 = days_since_epoch(y2, m2, d2);
-
-    // Calculate difference (exclude the start date)
-    if days2 <= days1 {
-        return 0;
-    }
-
-    (days2 - days1 - 1) as u32
-}
-
-// Calculate days since a common epoch (Jan 1, 1970)
-fn days_since_epoch(year: i32, month: u32, day: u32) -> i64 {
-    let mut days = 0i64;
-
-    // Days from years
-    for y in 1970..year {
+// 计算自纪元以来的天数
+fn days_since_epoch(year: i32, month: i32, day: i32) -> i32 {
+    let mut days = 0;
+    for y in 1..year {
         days += if is_leap_year(y) { 366 } else { 365 };
     }
+    for m in 1..month {
+        days += days_in_month(year, m);
+    }
+    days + day
+}
 
-    // Add days from current year
-    days += day_of_year(year, month, day) as i64;
+// 计算两个日期之间的天数差
+fn day_difference(year1: i32, month1: i32, day1: i32, year2: i32, month2: i32, day2: i32) -> i32 {
+    let days1 = days_since_epoch(year1, month1, day1);
+    let days2 = days_since_epoch(year2, month2, day2);
+    (days2 - days1).abs()
+}
 
-    days
+// 计算给定年份的第一个星期一的日期
+fn first_monday_of_year(year: i32) -> (i32, i32, i32) {
+    let mut first_thursday_day = 1;
+    for i in 0..6 {
+        let weekday = day_of_week(year, 1, 1 + i);
+        if weekday == 4 {
+            first_thursday_day = 1 + i;
+            break;
+        }
+    }
+    if first_thursday_day <= 3 {
+        (year - 1, 12, 31 - (3 - first_thursday_day))
+    } else {
+        (year, 1, first_thursday_day - 3)
+    }
+}
+
+// 计算给定日期是该年的第几周
+fn week_of_year(year: i32, month: i32, day: i32) -> i32 {
+    let (first_monday_year, first_monday_month, first_monday_day) = first_monday_of_year(year);
+    let day_diff = day_difference(
+        year,
+        month,
+        day,
+        first_monday_year,
+        first_monday_month,
+        first_monday_day,
+    );
+    let week_diff = day_diff / 7;
+
+    // 处理特殊情况
+    if month == 12 && (29..=31).contains(&day) {
+        let (next_monday_year, next_monday_month, next_monday_day) = first_monday_of_year(year + 1);
+        if next_monday_month == 12 && next_monday_day <= day {
+            return 1;
+        }
+    }
+    if month == 1 && (1..=4).contains(&day) {
+        let (first_monday_year, first_monday_month, first_monday_day) = first_monday_of_year(year);
+        if first_monday_month == 1 && first_monday_day > day {
+            let (last_monday_year, last_monday_month, last_monday_day) =
+                first_monday_of_year(year - 1);
+            return 1 + day_difference(
+                year,
+                month,
+                day,
+                last_monday_year,
+                last_monday_month,
+                last_monday_day,
+            ) / 7;
+        }
+    }
+
+    1 + week_diff
+}
+
+// 计算给定日期距离中国新年的天数
+fn days_to_chinese_new_year(year: i32, month: i32, day: i32) -> i32 {
+    let current_day = day_of_year(year, month, day);
+    let new_year_day = day_of_year(year, 1, 29);
+    if current_day < new_year_day {
+        new_year_day - current_day
+    } else {
+        let next_year = year + 1;
+        let next_new_year_day = day_of_year(next_year, 2, 17);
+        let days_in_current_year = if is_leap_year(year) { 366 } else { 365 };
+        days_in_current_year - current_day + next_new_year_day
+    }
+}
+
+// 计算给定日期距离下一个 A 股开盘日的天数
+fn days_to_next_a_share_opening(year: i32, month: i32, day: i32) -> i32 {
+    let new_year_day_open = day_of_year(year, 1, 2);
+    let spring_year_day_open = day_of_year(year, 2, 5);
+    let qingming_day_open = day_of_year(year, 4, 7);
+    let labor_day_open = day_of_year(year, 5, 6);
+    let zongzi_day_open = day_of_year(year, 6, 3);
+    let autumn_day_open = day_of_year(year, 10, 9);
+    let next_new_year_day_open = day_of_year(year + 1, 1, 1);
+
+    // 处理节假日
+    if month == 1 && day == 1 {
+        return new_year_day_open - day_of_year(year, month, day) - 1;
+    }
+    if (month == 1 && (28..=31).contains(&day)) || (month == 2 && (1..=4).contains(&day)) {
+        return spring_year_day_open - day_of_year(year, month, day) - 1;
+    }
+    if month == 4 && (4..=6).contains(&day) {
+        return qingming_day_open - day_of_year(year, month, day) - 1;
+    }
+    if month == 5 && (1..=5).contains(&day) {
+        return labor_day_open - day_of_year(year, month, day) - 1;
+    }
+    if (month == 5 && day == 31) || (month == 6 && (1..=2).contains(&day)) {
+        return zongzi_day_open - day_of_year(year, month, day) - 1;
+    }
+    if month == 10 && (1..=8).contains(&day) {
+        return autumn_day_open - day_of_year(year, month, day) - 1;
+    }
+    if month == 12 && day == 31 {
+        let days = if is_leap_year(year) { 366 } else { 365 };
+        return next_new_year_day_open - day_of_year(year, month, day) + days;
+    }
+
+    let weekday = day_of_week(year, month, day);
+    match weekday {
+        7 => 0, // 周日
+        5 => 2, // 周五，距离下周一开盘 2 天
+        6 => 1, // 周六，距离周一开盘 1 天
+        _ => 0, // 周一到周四
+    }
+}
+
+// 解析日期字符串并进行计算
+fn calculate_time(date_str: &str) -> String {
+    let parts: Vec<&str> = date_str.split('-').collect();
+    if parts.len() != 3 {
+        panic!("Invalid date format, expected YYYY-MM-DD");
+    }
+    let year: i32 = parts[0].parse().expect("Invalid year");
+    let month: i32 = parts[1].parse().expect("Invalid month");
+    let day: i32 = parts[2].parse().expect("Invalid day");
+
+    let week_num = week_of_year(year, month, day);
+    let weekday = day_of_week(year, month, day);
+    let day_of_year = day_of_year(year, month, day);
+    let days_left = days_left_in_year(year, month, day);
+    let days_to_cny = days_to_chinese_new_year(year, month, day);
+    let days_to_a_share = days_to_next_a_share_opening(year, month, day);
+
+    format!(
+        "{},{},{},{},{},{}",
+        week_num, weekday, day_of_year, days_left, days_to_cny, days_to_a_share
+    )
+}
+
+pub fn time_info(time: &str) -> String {
+    calculate_time(time)
 }

@@ -40,7 +40,7 @@ mod tests {
 
             // 时间超0.2s，判定不合格
             if duration <= Duration::from_millis(200) && result == *expected {
-                total_score += 50.0;
+                total_score += 10.0;
             }
         }
 
